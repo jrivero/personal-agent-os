@@ -105,6 +105,8 @@ my-vault/
 
 Skills are invoked with `/skill-name` or by trigger phrases. All skills are in `.claude/skills/`.
 
+**Private skills** (underscore-prefixed) live in the vault at `{{vault_path}}/00_SYSTEM/skills/` and are not committed to this repo. Load them from there.
+
 ### Cadence Skills (Run Regularly)
 | Skill | When | Purpose |
 |-------|------|---------|
