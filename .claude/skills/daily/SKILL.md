@@ -48,6 +48,7 @@ When `/daily quick` is invoked, run this streamlined 3-minute flow:
 
 ```
 Step 0   → Git commit/push (silent)
+Step 0.1 → Pull Granola calls from yesterday (silent) → save to vault
 Step 0.5 → Load extension (silent)
 Step 0.75→ Check date (silent)
 Step 1   → Read context (silent) - still scan ALL task sources
@@ -208,6 +209,95 @@ Is this accurate?"
 4. IF no changes: Skip silently
 
 **Why:** Ensures vault is saved before starting fresh daily reflection. Prevents data loss.
+
+### Step 0.1: Pull Granola Calls from Yesterday (Silent)
+
+**Pull yesterday's meeting notes from Granola and save to vault BEFORE pushing.**
+
+This runs after Step 0 auto-save but BEFORE the main daily flow, so call context is available for reflection.
+
+**Data source:** `~/Library/Application Support/Granola/cache-v6.json`
+
+**Process:**
+
+1. **Get yesterday's date:** `date -v-1d "+%Y-%m-%d"` (e.g., `2026-05-04`)
+
+2. **Read Granola cache:**
+   ```python
+   import json
+   with open(os.path.expanduser('~/Library/Application Support/Granola/cache-v6.json')) as f:
+       data = json.load(f)
+   state = data['cache']['state']
+   docs = state.get('documents', {})
+   transcripts = state.get('transcripts', {})
+   ```
+
+3. **Find yesterday's meetings:** Filter `docs` where `created_at` starts with yesterday's date.
+
+4. **For each meeting, extract:**
+   - `title`, `created_at` (→ time in Madrid = UTC+2)
+   - `people` (→ participant names/emails if available)
+   - Transcript: join `transcripts[doc_id]` segments by `text` field
+   - `notes_markdown` or `notes_plain` (if non-empty, prefer over transcript)
+
+5. **Classify by project** using title + participant signals:
+   | Signal | Project |
+   |--------|---------|
+   | "W23", "Dean", "Eliel", "Johnny", "Devan" in title/participants | `Supernal` → W23 subfolder |
+   | "standup", "all hands", "delivery planning", "Naveen", "Seb", "Tauseef" | `Supernal` → general |
+   | "lyah", "Angel", "John (Lyah)", "Namencis", "session" | `Lyah` |
+   | "LTAI", "podcast", "Abby", "guest" | `LTAI` |
+   | Personal / unclassified | `Personal` |
+
+6. **Save call notes to vault:**
+   - Supernal (general): `03_PROJECTS/Supernal/Calls/{YYYY-WXX}/{date}-{slug}.md`
+   - Supernal W23: `03_PROJECTS/Supernal/Calls/{YYYY-WXX}/{date}-w23-{slug}.md`
+   - Lyah: `03_PROJECTS/Lyah/Calls/{YYYY-WXX}/{date}-{slug}.md`
+   - LTAI: `03_PROJECTS/LTAI/Calls/{YYYY-WXX}/{date}-{slug}.md`
+
+7. **Call note format:**
+   ```markdown
+   # {Title}
+
+   *Date: YYYY-MM-DD*
+   *Time: HH:MM (Madrid)*
+   *Participants: {names from people field}*
+   *Source: Granola*
+
+   ---
+
+   ## Summary
+
+   {2-4 sentence summary of what was discussed and decided}
+
+   ## Key Decisions / Action Items
+
+   - {decision or action}
+   - {decision or action}
+
+   ## Notes
+
+   {any important context, quotes, dynamics worth preserving}
+
+   ---
+
+   #{project} #granola #{meeting-type}
+   ```
+
+8. **Generate summary** from transcript using this approach:
+   - If transcript is short (<5k chars): summarize fully
+   - If long (>5k chars): read first + last 2k chars, identify key moments
+   - Focus on: decisions made, action items, key disagreements, dynamics, outcomes
+
+9. **Stage the new files** — they'll be committed with the main vault push after the daily flow completes.
+
+10. **Report silently** — no output to user. But make call context available for Step 2 (yesterday reflection).
+
+**What to do if Granola has no meetings for yesterday:** Skip silently.
+
+**What to do if cache file missing:** Skip silently, log nothing.
+
+**Why before vault push:** Call notes belong to the vault. Granola is the source; the vault is the record. Pulling before push ensures calls are versioned with the daily.
 
 ### Step 0.5: Load Extension (Silent)
 
