@@ -48,6 +48,7 @@ When `/daily quick` is invoked, run this streamlined 3-minute flow:
 
 ```
 Step 0   → Git commit/push (silent)
+Step 0.1 → Pull Granola calls from yesterday (silent) → save to vault
 Step 0.5 → Load extension (silent)
 Step 0.75→ Check date (silent)
 Step 1   → Read context (silent) - still scan ALL task sources
@@ -208,6 +209,82 @@ Is this accurate?"
 4. IF no changes: Skip silently
 
 **Why:** Ensures vault is saved before starting fresh daily reflection. Prevents data loss.
+
+### Step 0.1: Pull Granola Calls from Yesterday (Silent)
+
+**Pull yesterday's meeting notes from Granola and save to vault BEFORE the main flow.**
+
+This runs after Step 0 auto-save. Call context from yesterday is available for reflection in Step 2.
+
+**Data source:** Granola MCP — use `list_meetings` + `get_meetings` tools. Do NOT read local cache files.
+
+**Process:**
+
+1. **Get dates:**
+   - Yesterday: `date -v-1d "+%Y-%m-%d"`
+   - ISO week: `date +"%Y-W%V"` (for folder naming)
+
+2. **List meetings via MCP:**
+   ```
+   list_meetings(time_range="custom", custom_start=<yesterday>, custom_end=<yesterday>)
+   ```
+   This returns meeting IDs and metadata for yesterday.
+
+3. **Fetch meeting details via MCP** (batch, max 10 per call):
+   ```
+   get_meetings(meeting_ids=[id1, id2, ...])
+   ```
+   Repeat for any remaining meetings if count > 10.
+
+4. **Skip meetings with no summary** (title = "New note" or summary = "No summary") — save nothing.
+
+5. **Classify by project** using title + participant signals configured in the vault extension:
+   - Read classification rules from `{{vault}}/00_SYSTEM/extensions/daily.md` (Granola Classification section)
+   - Each rule maps keywords (in title or participant names) → project folder
+   - Fallback: `Personal` if no rule matches
+
+   Example rule format (defined in your extension, not here):
+   | Signal | Project |
+   |--------|---------|
+   | keywords for project A | `ProjectA` → subfolder |
+   | keywords for project B | `ProjectB` → general |
+   | Personal / unclassified | `Personal` |
+
+6. **Save call notes to vault:**
+   - Per-project paths are defined in your vault extension
+   - Default pattern: `03_PROJECTS/{Project}/Calls/{YYYY-WXX}/{date}-{slug}.md`
+
+   **Skip duplicates:** Before writing, check if a file with the same date + slug already exists. If so, skip silently.
+
+7. **Call note format:**
+   ```markdown
+   # {Title}
+
+   *Date: YYYY-MM-DD*
+   *Time: HH:MM (local)*
+   *Participants: {names from known_participants}*
+   *Source: Granola*
+
+   ---
+
+   ## Summary
+
+   {Use the Granola-provided summary directly. If the summary has sections, preserve them.}
+
+   ---
+
+   #{project} #granola #{meeting-type}
+   ```
+
+8. **Stage the new files** — they'll be committed with the main vault push after the daily flow completes.
+
+9. **Report silently** — no output to user. But make call context available for Step 2 (yesterday reflection).
+
+**What to do if Granola has no meetings for the range:** Skip silently.
+
+**What to do if MCP tool unavailable:** Skip silently, log nothing.
+
+**Why before vault push:** Call notes belong to the vault. Granola is the source; the vault is the record. Pulling before push ensures calls are versioned with the daily.
 
 ### Step 0.5: Load Extension (Silent)
 
