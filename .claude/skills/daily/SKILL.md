@@ -210,35 +210,34 @@ Is this accurate?"
 
 **Why:** Ensures vault is saved before starting fresh daily reflection. Prevents data loss.
 
-### Step 0.1: Pull Granola Calls from Yesterday (Silent)
+### Step 0.1: Pull Granola Calls from Last 2 Days (Silent)
 
-**Pull yesterday's meeting notes from Granola and save to vault BEFORE pushing.**
+**Pull meeting notes from Granola for yesterday AND the day before, save to vault BEFORE the main flow.**
 
-This runs after Step 0 auto-save but BEFORE the main daily flow, so call context is available for reflection.
+This runs after Step 0 auto-save. Call context from the previous 2 days is available for reflection in Step 2.
 
-**Data source:** `~/Library/Application Support/Granola/cache-v6.json`
+**Data source:** Granola MCP — use `list_meetings` + `get_meetings` tools. Do NOT read local cache files.
 
 **Process:**
 
-1. **Get yesterday's date:** `date -v-1d "+%Y-%m-%d"` (e.g., `2026-05-04`)
+1. **Get date range:**
+   - Yesterday: `date -v-1d "+%Y-%m-%d"`
+   - Day before: `date -v-2d "+%Y-%m-%d"`
+   - ISO week: `date +"%Y-W%V"` (for folder naming)
 
-2. **Read Granola cache:**
-   ```python
-   import json
-   with open(os.path.expanduser('~/Library/Application Support/Granola/cache-v6.json')) as f:
-       data = json.load(f)
-   state = data['cache']['state']
-   docs = state.get('documents', {})
-   transcripts = state.get('transcripts', {})
+2. **List meetings via MCP:**
    ```
+   list_meetings(time_range="custom", custom_start=<day-before>, custom_end=<yesterday>)
+   ```
+   This returns meeting IDs and metadata for both days.
 
-3. **Find yesterday's meetings:** Filter `docs` where `created_at` starts with yesterday's date.
+3. **Fetch meeting details via MCP** (batch, max 10 per call):
+   ```
+   get_meetings(meeting_ids=[id1, id2, ...])
+   ```
+   Repeat for any remaining meetings if count > 10.
 
-4. **For each meeting, extract:**
-   - `title`, `created_at` (→ time in Madrid = UTC+2)
-   - `people` (→ participant names/emails if available)
-   - Transcript: join `transcripts[doc_id]` segments by `text` field
-   - `notes_markdown` or `notes_plain` (if non-empty, prefer over transcript)
+4. **Skip meetings with no summary** (title = "New note" or summary = "No summary") — save nothing.
 
 5. **Classify by project** using title + participant signals:
    | Signal | Project |
@@ -255,47 +254,35 @@ This runs after Step 0 auto-save but BEFORE the main daily flow, so call context
    - Lyah: `03_PROJECTS/Lyah/Calls/{YYYY-WXX}/{date}-{slug}.md`
    - LTAI: `03_PROJECTS/LTAI/Calls/{YYYY-WXX}/{date}-{slug}.md`
 
+   **Skip duplicates:** Before writing, check if a file with the same date + slug already exists. If so, skip silently.
+
 7. **Call note format:**
    ```markdown
    # {Title}
 
    *Date: YYYY-MM-DD*
    *Time: HH:MM (Madrid)*
-   *Participants: {names from people field}*
+   *Participants: {names from known_participants}*
    *Source: Granola*
 
    ---
 
    ## Summary
 
-   {2-4 sentence summary of what was discussed and decided}
-
-   ## Key Decisions / Action Items
-
-   - {decision or action}
-   - {decision or action}
-
-   ## Notes
-
-   {any important context, quotes, dynamics worth preserving}
+   {Use the Granola-provided summary directly. If the summary has sections, preserve them.}
 
    ---
 
    #{project} #granola #{meeting-type}
    ```
 
-8. **Generate summary** from transcript using this approach:
-   - If transcript is short (<5k chars): summarize fully
-   - If long (>5k chars): read first + last 2k chars, identify key moments
-   - Focus on: decisions made, action items, key disagreements, dynamics, outcomes
+8. **Stage the new files** — they'll be committed with the main vault push after the daily flow completes.
 
-9. **Stage the new files** — they'll be committed with the main vault push after the daily flow completes.
+9. **Report silently** — no output to user. But make call context available for Step 2 (yesterday reflection).
 
-10. **Report silently** — no output to user. But make call context available for Step 2 (yesterday reflection).
+**What to do if Granola has no meetings for the range:** Skip silently.
 
-**What to do if Granola has no meetings for yesterday:** Skip silently.
-
-**What to do if cache file missing:** Skip silently, log nothing.
+**What to do if MCP tool unavailable:** Skip silently, log nothing.
 
 **Why before vault push:** Call notes belong to the vault. Granola is the source; the vault is the record. Pulling before push ensures calls are versioned with the daily.
 
